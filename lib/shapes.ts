@@ -73,6 +73,11 @@ export async function photoShape(n: number, src: string): Promise<Shape> {
   const img = new Image();
   img.src = src;
   await img.decode();
+  return imageShape(n, img);
+}
+
+// versi sinkron untuk gambar yang sudah di-decode (Story Studio memuat fotonya sekali untuk semua gaya video)
+export function imageShape(n: number, img: HTMLImageElement): Shape {
   const G = Math.round(Math.sqrt((4 * n) / Math.PI)), cv = document.createElement("canvas");
   cv.width = cv.height = G;
   const x = cv.getContext("2d", { willReadFrequently: true })!;

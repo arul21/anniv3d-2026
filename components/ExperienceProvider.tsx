@@ -33,8 +33,7 @@ export default function ExperienceProvider({ children }: { children: React.React
   }, []);
 
   useEffect(() => {
-    document.body.classList.toggle("locked", !opened);
-    if (opened) lenis.current?.start();
+    if (opened) lenis.current?.start(); // kunci scroll native sebelum dibuka diatur CSS (body:has(#gate:not(.gone)))
   }, [opened]);
 
   useEffect(() => {

@@ -95,15 +95,9 @@ function Spiral({ count, selected, onSelect, started }: { count: number; selecte
 export default function MonthSpiral({ count }: { count: number }) {
   const wrap = useRef<HTMLDivElement>(null);
   const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
+  const visible = useNearViewport(wrap, "0px");
   const started = useRef(-1);
-  const [visible, setVisible] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
-
-  useEffect(() => {
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting));
-    io.observe(wrap.current!);
-    return () => io.disconnect();
-  }, []);
 
   const select = (i: number) => {
     const k = (i + count) % count;

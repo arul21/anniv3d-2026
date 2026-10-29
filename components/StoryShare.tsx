@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { renderStoryImage, shareFile, videoMime, type StoryData } from "@/lib/story";
 import { CONFIG } from "@/lib/config";
-import { VIDEO_STYLES } from "@/lib/story3d";
+import { VIDEO_STYLES, loadPhotos } from "@/lib/story3d";
 
 type Video = { status: "idle" | "rendering" | "ready" | "error"; progress: number; url?: string; blob?: Blob };
 type Slide = { id: string; label: string; video: boolean };
@@ -52,11 +52,13 @@ function StoryDialog({ data, onClose }: { data: StoryData; onClose: () => void }
     const style = VIDEO_STYLES.find((s) => s.id === id)!;
     setVideos((v) => ({ ...v, [id]: { status: "rendering", progress: 0 } }));
     try {
-      const blob = await style.render([CONFIG.fotoPartikel], (p) => setVideos((v) => ({ ...v, [id]: { ...v[id], progress: p } })));
+      const { imgs } = await loadPhotos([CONFIG.fotoPartikel]);
+      const blob = await style.render(imgs, (p) => setVideos((v) => ({ ...v, [id]: { ...v[id], progress: p } })));
       const url = URL.createObjectURL(blob);
       urls.current.push(url);
       setVideos((v) => ({ ...v, [id]: { status: "ready", progress: 1, blob, url } }));
-    } catch {
+    } catch (err) {
+      console.error(`Video ${id} gagal dibuat:`, err);
       setVideos((v) => ({ ...v, [id]: { status: "error", progress: 0 } }));
     }
   };

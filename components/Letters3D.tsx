@@ -173,7 +173,7 @@ export default function Letters3D({ opened, current, onPick, name }: {
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
-  const [visible, setVisible] = useState(false);
+  const visible = useNearViewport(wrap, "0px");
   const [targets, setTargets] = useState<Float32Array | null>(null);
   const count = opened.length;
 
@@ -186,12 +186,6 @@ export default function Letters3D({ opened, current, onPick, name }: {
     });
     return () => { cancelled = true; };
   }, [name, count]);
-
-  useEffect(() => {
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting));
-    io.observe(wrap.current!);
-    return () => io.disconnect();
-  }, []);
 
   return (
     <div ref={wrap} className="letters-3d">

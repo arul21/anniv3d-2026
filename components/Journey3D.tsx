@@ -255,8 +255,8 @@ export default function Journey3D({ section, bar, onActive }: {
   section: React.RefObject<HTMLElement | null>; bar: React.RefObject<HTMLElement | null>; onActive: (i: number) => void;
 }) {
   const [fonts, setFonts] = useState<{ serif: string; sans: string } | null>(null);
-  const [visible, setVisible] = useState(false);
   const near = useNearViewport(section); // pasang WebGL hanya saat dekat layar
+  const visible = useNearViewport(section, "0px");
 
   // kartu pengganti foto digambar dengan font dari next/font, jadi tunggu fontnya siap
   useEffect(() => {
@@ -266,12 +266,6 @@ export default function Journey3D({ section, bar, onActive }: {
       .then(() => { if (!cancelled) setFonts({ serif, sans }); });
     return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => {
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting));
-    if (section.current) io.observe(section.current);
-    return () => io.disconnect();
-  }, [section]);
 
   if (!fonts || !near) return null;
   return (

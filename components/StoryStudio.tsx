@@ -2,48 +2,79 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { shareFile, videoMime } from "@/lib/story";
-import { PHOTO_STYLES } from "@/lib/story3d";
+import { MAX_PHOTOS, PHOTO_STYLES, loadPhotos } from "@/lib/story3d";
 
 type Result = { status: "waiting" | "rendering" | "ready" | "error"; progress: number; url?: string; blob?: Blob };
-const MAX = 5;
+type Photo = { url: string; name: string };
+const MAX = MAX_PHOTOS;
 const noop = () => () => {};
 
 // Story Studio: pilih 1–5 foto → otomatis jadi 3 video Story 3D. Semua diproses di HP, foto tidak diunggah ke mana pun.
 export default function StoryStudio() {
-  const [photos, setPhotos] = useState<{ url: string; name: string }[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [results, setResults] = useState<Record<string, Result>>({});
   const [running, setRunning] = useState(false);
   const [index, setIndex] = useState(0);
   const [msg, setMsg] = useState("");
+  const [notice, setNotice] = useState("");
   // dukungan MP4 hanya bisa dicek di browser; server menganggap didukung supaya HTML awal sama (tanpa hydration mismatch)
   const supported = useSyncExternalStore(noop, () => !!videoMime(), () => true);
-  const urls = useRef<string[]>([]);
+  // daftar foto & URL video yang masih hidup, dibaca langsung (bukan dari closure render) supaya batas MAX
+  // dan pembebasan blob URL selalu sesuai keadaan terbaru
+  const photoList = useRef<Photo[]>([]);
+  const videoUrls = useRef<string[]>([]);
   const track = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { const list = urls.current; return () => list.forEach((u) => URL.revokeObjectURL(u)); }, []);
+  useEffect(() => () => {
+    photoList.current.forEach((p) => URL.revokeObjectURL(p.url));
+    videoUrls.current.forEach((u) => URL.revokeObjectURL(u));
+  }, []);
 
-  const keep = (u: string) => { urls.current.push(u); return u; };
+  const commitPhotos = (next: Photo[]) => { photoList.current = next; setPhotos(next); };
+  // video lama dibuang (blob-nya bisa beberapa MB) dan carousel kembali ke slide pertama
+  const clearResults = () => {
+    videoUrls.current.forEach((u) => URL.revokeObjectURL(u));
+    videoUrls.current = [];
+    setResults({}); setIndex(0); setMsg("");
+  };
   const addFiles = (files: FileList | null) => {
     if (!files) return;
-    const picked = [...files].filter((f) => f.type.startsWith("image/")).slice(0, MAX - photos.length);
-    setPhotos((p) => [...p, ...picked.map((f) => ({ url: keep(URL.createObjectURL(f)), name: f.name }))]);
-    setResults({});
+    const room = MAX - photoList.current.length;
+    const picked = [...files].filter((f) => f.type.startsWith("image/")).slice(0, room);
+    commitPhotos([...photoList.current, ...picked.map((f) => ({ url: URL.createObjectURL(f), name: f.name }))]);
+    clearResults(); setNotice("");
   };
-  const remove = (i: number) => { setPhotos((p) => p.filter((_, k) => k !== i)); setResults({}); };
+  const remove = (i: number) => {
+    URL.revokeObjectURL(photoList.current[i].url);
+    commitPhotos(photoList.current.filter((_, k) => k !== i));
+    clearResults(); setNotice("");
+  };
 
   const generate = async () => {
-    setRunning(true); setMsg("");
+    setRunning(true); clearResults(); setNotice("");
+    const { imgs, failed } = await loadPhotos(photoList.current.map((p) => p.url));
+    if (!imgs.length) {
+      setNotice("Fotonya tidak bisa dibaca browser ini. Coba pilih foto JPG atau PNG (foto HEIC dari iPhone kadang tidak didukung).");
+      setRunning(false);
+      return;
+    }
+    if (failed) setNotice(`${failed} foto tidak bisa dibaca dan dilewati. Coba ganti dengan JPG atau PNG.`);
     setResults(Object.fromEntries(PHOTO_STYLES.map((s) => [s.id, { status: "waiting", progress: 0 }])));
-    const srcs = photos.map((p) => p.url);
+    let errors = 0;
     for (const s of PHOTO_STYLES) {
       setResults((r) => ({ ...r, [s.id]: { status: "rendering", progress: 0 } }));
       try {
-        const blob = await s.render(srcs, (p) => setResults((r) => ({ ...r, [s.id]: { ...r[s.id], progress: p } })));
-        setResults((r) => ({ ...r, [s.id]: { status: "ready", progress: 1, blob, url: keep(URL.createObjectURL(blob)) } }));
-      } catch {
+        const blob = await s.render(imgs, (p) => setResults((r) => ({ ...r, [s.id]: { ...r[s.id], progress: p } })));
+        const url = URL.createObjectURL(blob);
+        videoUrls.current.push(url);
+        setResults((r) => ({ ...r, [s.id]: { status: "ready", progress: 1, blob, url } }));
+      } catch (err) {
+        console.error(`Video ${s.id} gagal dibuat:`, err);
+        errors++;
         setResults((r) => ({ ...r, [s.id]: { status: "error", progress: 0 } }));
       }
     }
+    if (errors) setNotice("Sebagian video gagal dibuat. Tutup tab atau aplikasi lain yang berat, lalu tekan Buat ulang.");
     setRunning(false);
   };
   const share = async (blob: Blob, id: string) => {
@@ -82,6 +113,7 @@ export default function StoryStudio() {
       <button className="btn" disabled={!photos.length || running || !supported} onClick={generate}>
         {running ? "Membuat video…" : hasResults ? "Buat ulang" : `Buat ${PHOTO_STYLES.length} video`}
       </button>
+      {notice && <p className="studio-warn" role="status">{notice}</p>}
 
       {hasResults && (
         <section className="studio-results" aria-label="Hasil video">

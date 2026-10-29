@@ -1,11 +1,11 @@
 // Video Story 3D: direkam langsung dari adegan WebGL (three.js), disusun bersama teks di canvas 2D,
-// lalu direkam dengan MediaRecorder menjadi MP4. Setiap gaya menerima 1–5 foto (URL / blob URL).
+// lalu direkam dengan MediaRecorder menjadi MP4. Setiap gaya menerima 0–5 foto yang sudah di-decode (lihat loadPhotos).
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CONFIG, WED, cssFont, roman, since, tgl } from "./config";
 import { heartGeometry } from "./geometry";
 import { makePoints, morphTo } from "./particles";
-import { heartShape, infinityShape, photoShape, shellShape, textShape, type Shape } from "./shapes";
+import { heartShape, imageShape, infinityShape, shellShape, textShape, type Shape } from "./shapes";
 import { videoMime } from "./story";
 
 const VW = 720, VH = 1280;
@@ -40,8 +40,12 @@ function loadImage(src: string) {
     img.src = src;
   });
 }
-async function loadImages(srcs: string[]) {
-  return (await Promise.all(srcs.slice(0, 5).map((s) => loadImage(s).catch(() => null)))).filter((x): x is HTMLImageElement => !!x);
+export const MAX_PHOTOS = 5;
+// muat & decode foto sekali (paralel) untuk semua gaya video; foto yang gagal (mis. HEIC di Chrome) dihitung supaya bisa dilaporkan
+export async function loadPhotos(srcs: string[]) {
+  const all = await Promise.all(srcs.slice(0, MAX_PHOTOS).map((s) => loadImage(s).catch(() => null)));
+  const imgs = all.filter((x): x is HTMLImageElement => !!x);
+  return { imgs, failed: all.length - imgs.length };
 }
 
 function createStage(pbr: boolean): Stage {
@@ -138,16 +142,14 @@ function dust(scene: THREE.Scene) {
 }
 
 // ---------- gaya 1: partikel (hati → angka → tiap foto jadi relief 3D → nama) ----------
-async function particles(photos: string[], onProgress: Progress) {
+async function particles(imgs: HTMLImageElement[], onProgress: Progress) {
   const f = await loadFonts(), years = Math.max(1, since().y), N = 18000;
-  const pics: Shape[] = [];
-  for (const src of photos.slice(0, 5)) {
-    const s = await photoShape(N, src).catch(() => null);
-    if (!s) continue;
-    // photoShape meredupkan warna untuk hero; di video foto harus terbaca jelas, jadi dicerahkan lagi
+  const pics = imgs.map((img) => {
+    const s = imageShape(N, img);
+    // imageShape meredupkan warna untuk hero; di video foto harus terbaca jelas, jadi dicerahkan lagi
     if (s.col) for (let i = 0; i < s.col.length; i++) s.col[i] = Math.min(1, s.col[i] * 2.6);
-    pics.push(s);
-  }
+    return s;
+  });
   if (!pics.length) pics.push({ pos: infinityShape(N), hold: 0 });
   const PHOTO = 2.6, P0 = 4.6, NAMES = P0 + pics.length * PHOTO, DUR = NAMES + 2.6;
   const timeline: [number, Shape][] = [
@@ -186,7 +188,7 @@ async function particles(photos: string[], onProgress: Progress) {
 }
 
 // ---------- gaya 2: dua cincin yang saling mengait ----------
-async function rings(_photos: string[], onProgress: Progress) {
+async function rings(_imgs: HTMLImageElement[], onProgress: Progress) {
   const f = await loadFonts(), years = Math.max(1, since().y), DUR = 8.5;
   const stage = createStage(true);
   const geo = new THREE.TorusGeometry(1, 0.075, 64, 220);
@@ -221,9 +223,8 @@ async function rings(_photos: string[], onProgress: Progress) {
 }
 
 // ---------- gaya 3: hati emas berpusar → satu hati besar, foto bergantian di tengahnya ----------
-async function hearts(photos: string[], onProgress: Progress) {
+async function hearts(imgs: HTMLImageElement[], onProgress: Progress) {
   const f = await loadFonts(), t0 = since(), months = Math.max(12, t0.y * 12 + t0.mo);
-  const imgs = await loadImages(photos);
   const SHOW = 1.8, DUR = Math.max(8.5, 5.4 + imgs.length * SHOW + 1.6);
   const stage = createStage(true);
   const geo = heartGeometry({ curveSegments: 14, bevelSegments: 4 });
@@ -272,9 +273,8 @@ async function hearts(photos: string[], onProgress: Progress) {
 }
 
 // ---------- gaya 4: galeri 3D — foto jadi bingkai emas melayang, kamera terbang melewatinya ----------
-async function gallery(photos: string[], onProgress: Progress) {
+async function gallery(imgs: HTMLImageElement[], onProgress: Progress) {
   const f = await loadFonts(), years = Math.max(1, since().y);
-  const imgs = await loadImages(photos);
   const n = Math.max(1, imgs.length), GAP = 5, EACH = 1.9, DUR = 1.6 + n * EACH + 2.4;
   const stage = createStage(true);
   const light = new THREE.DirectionalLight("#fff1dc", 1.2);
@@ -333,7 +333,7 @@ async function gallery(photos: string[], onProgress: Progress) {
   });
 }
 
-export type VideoStyle = { id: string; label: string; render: (photos: string[], onProgress: Progress) => Promise<Blob> };
+export type VideoStyle = { id: string; label: string; render: (imgs: HTMLImageElement[], onProgress: Progress) => Promise<Blob> };
 
 // semua gaya; website memakai foto keluarga di config, Story Studio memakai foto yang dipilih pengguna
 export const VIDEO_STYLES: VideoStyle[] = [

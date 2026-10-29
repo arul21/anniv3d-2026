@@ -100,10 +100,10 @@ function Particles({ shapes, active, input, stage }: {
 export default function Hero3D({ active, numeral, onReady }: { active: boolean; numeral: string; onReady: () => void }) {
   const wrap = useRef<HTMLDivElement>(null);
   const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
+  const visible = useNearViewport(wrap, "0px");
   const shapes = useRef<Shape[]>([]);
   const input = useRef<Input>({ x: 0, y: 0, over: false, lastX: null, lastY: 0, drag: 0, tilt: 0, gyX: 0, gyY: 0 });
   const [ready, setReady] = useState(false);
-  const [visible, setVisible] = useState(true);
 
   // bangun semua bentuk setelah font siap (teks digambar pakai font dari next/font)
   useEffect(() => {
@@ -156,8 +156,6 @@ export default function Hero3D({ active, numeral, onReady }: { active: boolean; 
     addEventListener("pointerup", release);
     addEventListener("pointercancel", release);
     addEventListener("deviceorientation", orient);
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting));
-    io.observe(el);
     return () => {
       el.removeEventListener("touchstart", touch);
       el.removeEventListener("touchmove", touch);
@@ -167,7 +165,6 @@ export default function Hero3D({ active, numeral, onReady }: { active: boolean; 
       removeEventListener("pointerup", release);
       removeEventListener("pointercancel", release);
       removeEventListener("deviceorientation", orient);
-      io.disconnect();
     };
   }, []);
 

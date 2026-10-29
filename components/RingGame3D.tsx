@@ -2,7 +2,7 @@
 
 import { useNearViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { arpeggio, sfx } from "@/lib/audio";
 import { confettiBurst } from "@/lib/fx";
@@ -74,8 +74,8 @@ type Ctl = { tx: number; ty: number; keys: Record<string, boolean> };
 /* eslint-disable react-hooks/immutability --
    Posisi, material & kamera three.js serta state engine game memang diubah langsung tiap frame di useFrame
    (pola React Three Fiber); bukan state React dan tidak memicu render ulang. HUD dikirim lewat callback. */
-function World({ session, target, ctl, onHud, onEnd }: {
-  session: number; target: number; ctl: React.RefObject<Ctl>; onHud: (h: Hud) => void; onEnd: (win: boolean) => void;
+function World({ session, started, target, ctl, onHud, onEnd }: {
+  session: number; started: React.RefObject<number>; target: number; ctl: React.RefObject<Ctl>; onHud: (h: Hud) => void; onEnd: (win: boolean) => void;
 }) {
   const { camera, size, gl, scene } = useThree();
   const world = useMemo(() => createWorld(), []);
@@ -87,7 +87,8 @@ function World({ session, target, ctl, onHud, onEnd }: {
 
   // sesi baru = mulai main
   useEffect(() => {
-    if (session === 0) return;
+    if (session === 0 || started.current === session) return;
+    started.current = session;
     Object.assign(G.current, { phase: "play", score: 0, lives: 3, combo: 0, spawnT: 0.4, slow: 0, shake: 0, flash: 0, finaleT: 0, attached: false });
     world.items.forEach((it) => { it.alive = false; it.mesh.visible = false; });
     if (world.bigGem.parent === world.ring) { world.ring.remove(world.bigGem); scene.add(world.bigGem); }
@@ -95,7 +96,7 @@ function World({ session, target, ctl, onHud, onEnd }: {
     world.ring.scale.setScalar(1);
     world.ring.rotation.set(0, 0, 0);
     onHud({ score: 0, lives: 3, mult: 1 });
-  }, [session, world, onHud, scene]);
+  }, [session, started, world, onHud, scene]);
 
   const burstAt = (x: number, y: number, z: number, n: number) => {
     tmp.v.set(x, y, z).project(camera);
@@ -246,19 +247,19 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
+  const visible = useNearViewport(wrap, "0px");
   const ctl = useRef<Ctl>({ tx: 0, ty: -0.6, keys: {} });
-  const [visible, setVisible] = useState(false);
+  // sesi terakhir yang sudah dimulai, disimpan di luar <World> supaya canvas yang dipasang ulang tidak memulai game lagi
+  const started = useRef(0);
 
   useEffect(() => {
-    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting));
-    io.observe(wrap.current!);
     const down = (e: KeyboardEvent) => {
       if (playing && e.key.startsWith("Arrow")) { ctl.current.keys[e.key] = true; e.preventDefault(); }
     };
     const up = (e: KeyboardEvent) => { ctl.current.keys[e.key] = false; };
     addEventListener("keydown", down);
     addEventListener("keyup", up);
-    return () => { io.disconnect(); removeEventListener("keydown", down); removeEventListener("keyup", up); };
+    return () => { removeEventListener("keydown", down); removeEventListener("keyup", up); };
   }, [playing]);
 
   // posisi jari → titik di bidang cincin (z = 0)
@@ -276,7 +277,8 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
       onPointerMove={aim}
       onPointerDown={aim}
     >
-      {near && (<Canvas
+      {/* selama bermain canvas tetap terpasang walau di-scroll jauh (hanya dijeda), supaya skor tidak hilang */}
+      {(near || playing) && (<Canvas
         dpr={[1, 2]}
         frameloop={visible ? "always" : "never"}
         camera={{ fov: 50, near: 0.1, far: 40, position: [0, 0, CAM_Z] }}
@@ -286,7 +288,7 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
         <Studio intensity={1} />
         <directionalLight position={[2, 3, 4]} intensity={1.4} color="#fff1dc" />
         <pointLight position={[0, 0, 2]} intensity={4} color="#e8c48a" />
-        <World session={session} target={target} ctl={ctl} onHud={onHud} onEnd={onEnd} />
+        <World session={session} started={started} target={target} ctl={ctl} onHud={onHud} onEnd={onEnd} />
       </Canvas>)}
     </div>
   );
