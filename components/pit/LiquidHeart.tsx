@@ -1,5 +1,6 @@
 "use client";
 
+import { useNearViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -135,6 +136,7 @@ function Liquid({ count, input, onMerged }: { count: number; input: React.RefObj
 
 export default function LiquidHeart({ count }: { count: number }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
   const input = useRef<Input>({ x: 0, y: 0, down: false, burst: false, visible: false });
   const [visible, setVisible] = useState(false);
   const [merged, setMerged] = useState(false);
@@ -161,9 +163,9 @@ export default function LiquidHeart({ count }: { count: number }) {
       onPointerLeave={() => { input.current.down = false; }}
       onDoubleClick={() => { input.current.burst = true; }}
     >
-      <Canvas dpr={[1, 1.5]} frameloop={visible ? "always" : "never"} gl={{ alpha: true, antialias: false }} style={{ position: "absolute", inset: 0, touchAction: "pan-y" }}>
+      {near && (<Canvas dpr={[1, 1.5]} frameloop={visible ? "always" : "never"} gl={{ alpha: true, antialias: false }} style={{ position: "absolute", inset: 0, touchAction: "pan-y" }}>
         <Liquid count={count} input={input} onMerged={setMerged} />
-      </Canvas>
+      </Canvas>)}
       <p className={`pit-caption${merged ? " on" : ""}`}>{count} bulan. <em>Satu hati.</em></p>
       <span className="pit-hint">Tahan &amp; geser · ketuk 2× untuk memisahkan</span>
     </div>

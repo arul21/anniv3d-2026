@@ -29,7 +29,8 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="id" className={`${serif.variable} ${sans.variable}`}>
-      <body className="locked">{children}</body>
+      {/* kunci scroll sebelum amplop dibuka diatur oleh ExperienceProvider (hanya halaman utama) */}
+      <body>{children}</body>
     </html>
   );
 }

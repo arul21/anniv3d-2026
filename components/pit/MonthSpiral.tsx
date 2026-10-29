@@ -1,5 +1,6 @@
 "use client";
 
+import { useNearViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -93,6 +94,7 @@ function Spiral({ count, selected, onSelect, started }: { count: number; selecte
 
 export default function MonthSpiral({ count }: { count: number }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
   const started = useRef(-1);
   const [visible, setVisible] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -112,7 +114,7 @@ export default function MonthSpiral({ count }: { count: number }) {
 
   return (
     <div ref={wrap} className="pit-3d">
-      <Canvas
+      {near && (<Canvas
         dpr={[1, 2]}
         frameloop={visible ? "always" : "never"}
         camera={{ fov: 45, near: 0.1, far: 40, position: [0, 0, 7] }}
@@ -122,7 +124,7 @@ export default function MonthSpiral({ count }: { count: number }) {
         <Studio intensity={0.9} />
         <directionalLight position={[2, 3, 4]} intensity={1.5} color="#fff1dc" />
         <Spiral count={count} selected={selected} onSelect={select} started={started} />
-      </Canvas>
+      </Canvas>)}
       <div className="month-card" aria-live="polite">
         {info ? (
           <>

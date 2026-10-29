@@ -1,5 +1,6 @@
 "use client";
 
+import { useNearViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -244,6 +245,7 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
   session: number; target: number; playing: boolean; onHud: (h: Hud) => void; onEnd: (win: boolean) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
   const ctl = useRef<Ctl>({ tx: 0, ty: -0.6, keys: {} });
   const [visible, setVisible] = useState(false);
 
@@ -274,7 +276,7 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
       onPointerMove={aim}
       onPointerDown={aim}
     >
-      <Canvas
+      {near && (<Canvas
         dpr={[1, 2]}
         frameloop={visible ? "always" : "never"}
         camera={{ fov: 50, near: 0.1, far: 40, position: [0, 0, CAM_Z] }}
@@ -285,7 +287,7 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
         <directionalLight position={[2, 3, 4]} intensity={1.4} color="#fff1dc" />
         <pointLight position={[0, 0, 2]} intensity={4} color="#e8c48a" />
         <World session={session} target={target} ctl={ctl} onHud={onHud} onEnd={onEnd} />
-      </Canvas>
+      </Canvas>)}
     </div>
   );
 }

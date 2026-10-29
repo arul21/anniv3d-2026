@@ -1,5 +1,6 @@
 "use client";
 
+import { useNearViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -255,6 +256,7 @@ export default function Journey3D({ section, bar, onActive }: {
 }) {
   const [fonts, setFonts] = useState<{ serif: string; sans: string } | null>(null);
   const [visible, setVisible] = useState(false);
+  const near = useNearViewport(section); // pasang WebGL hanya saat dekat layar
 
   // kartu pengganti foto digambar dengan font dari next/font, jadi tunggu fontnya siap
   useEffect(() => {
@@ -271,7 +273,7 @@ export default function Journey3D({ section, bar, onActive }: {
     return () => io.disconnect();
   }, [section]);
 
-  if (!fonts) return null;
+  if (!fonts || !near) return null;
   return (
     <Canvas
       className="journey-canvas"

@@ -1,5 +1,5 @@
 // Video Story 3D: direkam langsung dari adegan WebGL (three.js), disusun bersama teks di canvas 2D,
-// lalu direkam dengan MediaRecorder menjadi MP4. Ada beberapa gaya yang bisa dipilih (di-slide) oleh pengguna.
+// lalu direkam dengan MediaRecorder menjadi MP4. Setiap gaya menerima 1–5 foto (URL / blob URL).
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CONFIG, WED, cssFont, roman, since, tgl } from "./config";
@@ -15,13 +15,14 @@ const inOut = (t: number, a: number, b: number) => Math.min(span(t, a, a + 0.6),
 
 type Fonts = { serif: string; sans: string };
 type Stage = { renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; gl: HTMLCanvasElement };
-type Overlay = (c: CanvasRenderingContext2D, t: number, txt: TextKit) => void;
 type TextKit = {
   title: (a: number, big: string, small: string) => void;
   end: (a: number) => void;
-  spaced: (text: string, x: number, y: number, s: number) => void;
-  f: Fonts;
+  big: (a: number, text: string) => void;
+  photo: (a: number, img: HTMLImageElement, cx: number, cy: number, r: number) => void;
 };
+type Overlay = (t: number, txt: TextKit) => void;
+export type Progress = (p: number) => void;
 
 async function loadFonts(): Promise<Fonts> {
   const f = { serif: cssFont("--font-cormorant"), sans: cssFont("--font-montserrat") };
@@ -31,6 +32,17 @@ async function loadFonts(): Promise<Fonts> {
   ]);
   return f;
 }
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+async function loadImages(srcs: string[]) {
+  return (await Promise.all(srcs.slice(0, 5).map((s) => loadImage(s).catch(() => null)))).filter((x): x is HTMLImageElement => !!x);
+}
 
 function createStage(pbr: boolean): Stage {
   const gl = document.createElement("canvas");
@@ -39,13 +51,13 @@ function createStage(pbr: boolean): Stage {
   renderer.setClearColor("#0d0b0a", 1);
   const scene = new THREE.Scene();
   if (pbr) scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
-  const camera = new THREE.PerspectiveCamera(45, VW / VH, 0.1, 60);
+  const camera = new THREE.PerspectiveCamera(45, VW / VH, 0.1, 80);
   camera.position.set(0, 0, 6.4);
   return { renderer, scene, camera, gl };
 }
 
 // komposisi (WebGL + vignette + teks) → MP4. Dipakai semua gaya video.
-function record(stage: Stage, dur: number, f: Fonts, update: (t: number) => void, overlay: Overlay, onProgress: (p: number) => void, dispose: () => void) {
+function record(stage: Stage, dur: number, f: Fonts, update: (t: number) => void, overlay: Overlay, onProgress: Progress, dispose: () => void) {
   const mime = videoMime()!;
   const out = document.createElement("canvas");
   out.width = VW; out.height = VH;
@@ -57,14 +69,26 @@ function record(stage: Stage, dur: number, f: Fonts, update: (t: number) => void
     c.save(); c.globalAlpha = Math.min(1, a); c.translate(0, (1 - Math.min(1, a)) * 24); paint(); c.restore();
   };
   const txt: TextKit = {
-    f, spaced,
     title: (a, big, small) => fade(a, () => {
       c.fillStyle = "#f3ece2"; c.font = `italic 300 64px ${f.serif}`; c.fillText(big, 540, 1600);
       c.fillStyle = "#a79e92"; c.font = `500 26px ${f.sans}`; spaced(small.toUpperCase(), 540, 1680, 9);
     }),
-    end: (a) => fade(a, () => {
-      c.fillStyle = "#e3cc98"; c.font = `500 30px ${f.sans}`; spaced("HAPPY ANNIVERSARY", 540, 1640, 13);
-    }),
+    end: (a) => fade(a, () => { c.fillStyle = "#e3cc98"; c.font = `500 30px ${f.sans}`; spaced("HAPPY ANNIVERSARY", 540, 1640, 13); }),
+    big: (a, text) => {
+      if (a <= 0) return;
+      c.save(); c.globalAlpha = Math.min(1, a); c.fillStyle = "#e3cc98"; c.font = `300 220px ${f.serif}`; c.fillText(text, 540, 470); c.restore();
+    },
+    // foto bulat berbingkai emas (dipakai gaya "hati emas")
+    photo: (a, img, cx, cy, r) => {
+      if (a <= 0) return;
+      c.save(); c.globalAlpha = Math.min(1, a);
+      c.beginPath(); c.arc(cx, cy, r, 0, 6.283); c.save(); c.clip();
+      const s = Math.max((2 * r) / img.naturalWidth, (2 * r) / img.naturalHeight);
+      c.drawImage(img, cx - (img.naturalWidth * s) / 2, cy - (img.naturalHeight * s) / 2, img.naturalWidth * s, img.naturalHeight * s);
+      c.restore();
+      c.strokeStyle = "#c8a96b"; c.lineWidth = 5; c.beginPath(); c.arc(cx, cy, r + 2, 0, 6.283); c.stroke();
+      c.restore();
+    },
   };
   const draw = (t: number) => {
     update(t);
@@ -76,7 +100,7 @@ function record(stage: Stage, dur: number, f: Fonts, update: (t: number) => void
     c.fillStyle = g; c.fillRect(0, 0, VW, VH);
     c.setTransform(k, 0, 0, k, 0, 0);
     c.textAlign = "center";
-    overlay(c, t, txt);
+    overlay(t, txt);
   };
 
   draw(0);
@@ -113,16 +137,25 @@ function dust(scene: THREE.Scene) {
   return d;
 }
 
-// ---------- gaya 1: partikel (hati → angka → foto relief 3D → nama) ----------
-async function particles(onProgress: (p: number) => void) {
-  const f = await loadFonts(), years = Math.max(1, since().y), N = 18000, DUR = 9.5;
-  const heart: Shape = { pos: heartShape(N), hold: 0 };
-  const numeral: Shape = { pos: textShape(N, roman(years), { family: f.serif, weight: "600" }, 1.1), hold: 0 };
-  const family: Shape = await photoShape(N, CONFIG.fotoPartikel).catch(() => ({ pos: infinityShape(N), hold: 0 }));
-  // photoShape meredupkan warna untuk hero; di video foto harus terbaca jelas, jadi dicerahkan lagi
-  if (family.col) for (let i = 0; i < family.col.length; i++) family.col[i] = Math.min(1, family.col[i] * 2.6);
-  const names: Shape = { pos: textShape(N, `${CONFIG.suami} & ${CONFIG.istri}`, { family: f.serif, weight: "italic 500" }, 1.25), hold: 0 };
-  const timeline: [number, Shape][] = [[0.3, heart], [2.6, numeral], [4.6, family], [7.4, names]];
+// ---------- gaya 1: partikel (hati → angka → tiap foto jadi relief 3D → nama) ----------
+async function particles(photos: string[], onProgress: Progress) {
+  const f = await loadFonts(), years = Math.max(1, since().y), N = 18000;
+  const pics: Shape[] = [];
+  for (const src of photos.slice(0, 5)) {
+    const s = await photoShape(N, src).catch(() => null);
+    if (!s) continue;
+    // photoShape meredupkan warna untuk hero; di video foto harus terbaca jelas, jadi dicerahkan lagi
+    if (s.col) for (let i = 0; i < s.col.length; i++) s.col[i] = Math.min(1, s.col[i] * 2.6);
+    pics.push(s);
+  }
+  if (!pics.length) pics.push({ pos: infinityShape(N), hold: 0 });
+  const PHOTO = 2.6, P0 = 4.6, NAMES = P0 + pics.length * PHOTO, DUR = NAMES + 2.6;
+  const timeline: [number, Shape][] = [
+    [0.3, { pos: heartShape(N), hold: 0 }],
+    [2.6, { pos: textShape(N, roman(years), { family: f.serif, weight: "600" }, 1.1), hold: 0 }],
+    ...pics.map((s, i): [number, Shape] => [P0 + i * PHOTO, s]),
+    [NAMES, { pos: textShape(N, `${CONFIG.suami} & ${CONFIG.istri}`, { family: f.serif, weight: "italic 500" }, 1.25), hold: 0 }],
+  ];
 
   const stage = createStage(false), group = new THREE.Group();
   const scatter = shellShape(N, 2.4, 4.5);
@@ -137,23 +170,23 @@ async function particles(onProgress: (p: number) => void) {
     const U = main.pts.material.uniforms;
     U.uMix.value = Math.min(1, (t - mixStart) / 1.7);
     U.uTime.value = d.pts.material.uniforms.uTime.value = t;
-    // saat foto: partikel diperbesar supaya saling menumpuk jadi foto yang terang, kamera mengorbit memperlihatkan relief 3D
-    const photo = span(t, 5.0, 5.9) * (1 - span(t, 7.2, 7.6));
+    // saat foto: partikel diperbesar supaya menumpuk jadi foto yang terang; kamera mengorbit memperlihatkan relief 3D
+    const photo = span(t, P0 + 0.4, P0 + 1.3) * (1 - span(t, NAMES - 0.4, NAMES));
     U.uSize.value = 30 + 34 * photo;
-    group.rotation.y = Math.sin(t * 0.7) * 0.32 * (1 - photo) + Math.sin((t - 5.0) * 1.1) * 0.42 * photo;
+    group.rotation.y = Math.sin(t * 0.7) * 0.32 * (1 - photo) + Math.sin((t - P0) * 1.1) * 0.42 * photo;
     group.rotation.x = Math.sin(t * 0.45) * 0.1 * (1 - photo) + photo * 0.12;
     stage.camera.position.z = 6.4 - span(t, 0, 2.2) * 0.6 + photo * 0.2;
     d.pts.rotation.y = t * 0.05;
-  }, (c, t, x) => {
+  }, (t, x) => {
     x.title(inOut(t, 0.6, 2.5), "Ribuan cahaya,", "satu hati");
     x.title(inOut(t, 2.9, 4.5), `${years} tahun bersama.`, `sejak ${tgl(WED)}`);
-    x.title(inOut(t, 5.2, 7.3), "Satu keluarga.", `${CONFIG.suami} · ${CONFIG.istri} · ${CONFIG.anak}`);
-    x.end(span(t, 8.0, 8.7));
+    x.title(inOut(t, P0 + 0.6, NAMES - 0.2), "Cerita kita.", `${CONFIG.suami} · ${CONFIG.istri} · ${CONFIG.anak}`);
+    x.end(span(t, DUR - 1.4, DUR - 0.7));
   }, onProgress, () => { for (const p of [main, d]) { p.pts.geometry.dispose(); p.pts.material.dispose(); } });
 }
 
 // ---------- gaya 2: dua cincin yang saling mengait ----------
-async function rings(onProgress: (p: number) => void) {
+async function rings(_photos: string[], onProgress: Progress) {
   const f = await loadFonts(), years = Math.max(1, since().y), DUR = 8.5;
   const stage = createStage(true);
   const geo = new THREE.TorusGeometry(1, 0.075, 64, 220);
@@ -179,19 +212,19 @@ async function rings(onProgress: (p: number) => void) {
     stage.camera.position.z = 9 - span(t, 0, 3) * 1.4; // berakhir di jarak yang memuat kedua cincin di layar vertikal
     d.pts.material.uniforms.uTime.value = t;
     d.pts.rotation.y = t * 0.06;
-  }, (c, t, x) => {
+  }, (t, x) => {
     x.title(inOut(t, 1.6, 3.8), "Dua cincin,", "satu janji");
-    fade2(c, span(t, 3.9, 4.8), () => {
-      c.fillStyle = "#e3cc98"; c.font = `300 220px ${f.serif}`; c.fillText(roman(years), 540, 470);
-    });
+    x.big(span(t, 3.9, 4.8), roman(years));
     x.title(inOut(t, 4.2, 6.6), `${CONFIG.suami} & ${CONFIG.istri}`, `sejak ${tgl(WED)}`);
     x.end(span(t, 7.0, 7.7));
   }, onProgress, () => { geo.dispose(); gold.dispose(); rose.dispose(); d.pts.geometry.dispose(); d.pts.material.dispose(); });
 }
 
-// ---------- gaya 3: 48 hati emas yang berpusar lalu membentuk satu hati besar ----------
-async function hearts(onProgress: (p: number) => void) {
-  const f = await loadFonts(), t0 = since(), months = Math.max(12, t0.y * 12 + t0.mo), DUR = 8.5;
+// ---------- gaya 3: hati emas berpusar → satu hati besar, foto bergantian di tengahnya ----------
+async function hearts(photos: string[], onProgress: Progress) {
+  const f = await loadFonts(), t0 = since(), months = Math.max(12, t0.y * 12 + t0.mo);
+  const imgs = await loadImages(photos);
+  const SHOW = 1.8, DUR = Math.max(8.5, 5.4 + imgs.length * SHOW + 1.6);
   const stage = createStage(true);
   const geo = heartGeometry({ curveSegments: 14, bevelSegments: 4 });
   const mat = new THREE.MeshPhysicalMaterial({ metalness: 1, roughness: 0.2, clearcoat: 1 });
@@ -203,10 +236,9 @@ async function hearts(onProgress: (p: number) => void) {
   light.position.set(2, 3, 4);
   stage.scene.add(light);
   const d = dust(stage.scene);
-  // posisi akhir: di sepanjang garis hati besar
+  // posisi akhir di sepanjang garis hati besar (0.075: muat di layar vertikal 9:16)
   const target = Array.from({ length: months }, (_, i) => {
     const s = (i / months) * Math.PI * 2;
-    // 0.075: hati besar muat di layar vertikal 9:16
     return new THREE.Vector3(16 * Math.sin(s) ** 3 * 0.075, (13 * Math.cos(s) - 5 * Math.cos(2 * s) - 2 * Math.cos(3 * s) - Math.cos(4 * s)) * 0.075 + 0.3, 0);
   });
   const o = new THREE.Object3D(), v = new THREE.Vector3();
@@ -215,12 +247,11 @@ async function hearts(onProgress: (p: number) => void) {
     const gather = span(t, 3.0, 5.2);
     for (let i = 0; i < months; i++) {
       // pusaran heliks yang naik, lalu tiap hati terbang ke posisinya di hati besar
-      const a = i * 0.5 + t * 1.4, r = 1.1 + (i % 7) * 0.12, y = ((i / months) * 4 - 2) + Math.sin(t + i) * 0.1;
+      const a = i * 0.5 + t * 1.4, r = 1.1 + (i % 7) * 0.12, y = (i / months) * 4 - 2 + Math.sin(t + i) * 0.1;
       v.set(Math.cos(a) * r, y, Math.sin(a) * r);
       o.position.lerpVectors(v, target[i], gather);
-      o.rotation.set(t * 1.3 + i, t * 0.9 + i * 0.5, 0);
-      o.rotation.x *= 1 - gather; o.rotation.y *= 1 - gather * 0.8;
-      o.scale.setScalar(0.13 - gather * 0.025 +(gather > 0.99 ? Math.pow(Math.max(0, Math.sin(t * 3)), 10) * 0.03 : 0));
+      o.rotation.set((t * 1.3 + i) * (1 - gather), (t * 0.9 + i * 0.5) * (1 - gather * 0.8), 0);
+      o.scale.setScalar(0.13 - gather * 0.025 + (gather > 0.99 ? Math.pow(Math.max(0, Math.sin(t * 3)), 10) * 0.03 : 0));
       o.updateMatrix();
       mesh.setMatrixAt(i, o.matrix);
     }
@@ -228,20 +259,88 @@ async function hearts(onProgress: (p: number) => void) {
     mesh.rotation.y = Math.sin(t * 0.5) * 0.35 * gather + t * 0.25 * (1 - gather);
     stage.camera.position.z = 7 - span(t, 0, 3) * 0.8;
     d.pts.material.uniforms.uTime.value = t;
-  }, (c, t, x) => {
+  }, (t, x) => {
     x.title(inOut(t, 0.8, 3.0), `${months} bulan,`, `${months} hati`);
-    x.title(inOut(t, 5.0, 7.0), "Semuanya untukmu.", `${CONFIG.suami} & ${CONFIG.istri}`);
-    x.end(span(t, 7.1, 7.8));
+    // foto bergantian di tengah hati besar
+    imgs.forEach((img, i) => {
+      const s = 5.2 + i * SHOW, e = s + SHOW + 0.3;
+      x.photo(Math.min(span(t, s, s + 0.5), 1 - (i < imgs.length - 1 ? span(t, e - 0.3, e) : 0)), img, 540, 900, 230);
+    });
+    x.title(inOut(t, 5.4, DUR - 1.4), "Semuanya untukmu.", `${CONFIG.suami} & ${CONFIG.istri}`);
+    x.end(span(t, DUR - 1.3, DUR - 0.6));
   }, onProgress, () => { geo.dispose(); mat.dispose(); d.pts.geometry.dispose(); d.pts.material.dispose(); });
 }
 
-function fade2(c: CanvasRenderingContext2D, a: number, paint: () => void) {
-  if (a <= 0) return;
-  c.save(); c.globalAlpha = Math.min(1, a); paint(); c.restore();
+// ---------- gaya 4: galeri 3D — foto jadi bingkai emas melayang, kamera terbang melewatinya ----------
+async function gallery(photos: string[], onProgress: Progress) {
+  const f = await loadFonts(), years = Math.max(1, since().y);
+  const imgs = await loadImages(photos);
+  const n = Math.max(1, imgs.length), GAP = 5, EACH = 1.9, DUR = 1.6 + n * EACH + 2.4;
+  const stage = createStage(true);
+  const light = new THREE.DirectionalLight("#fff1dc", 1.2);
+  light.position.set(2, 3, 4);
+  stage.scene.add(light);
+  stage.scene.fog = new THREE.Fog("#0d0b0a", 6, 20);
+  const W = 1.8, H = 2.25;
+  const photoGeo = new THREE.PlaneGeometry(W, H), borderGeo = new THREE.PlaneGeometry(W + 0.12, H + 0.12);
+  const gold = new THREE.MeshStandardMaterial({ color: "#c8a96b", metalness: 1, roughness: 0.28 });
+  const textures: THREE.Texture[] = [], mats: THREE.Material[] = [];
+  imgs.forEach((img, i) => {
+    const tex = new THREE.Texture(img);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
+    // potong "cover" ke rasio bingkai
+    const ia = img.naturalWidth / img.naturalHeight, fa = W / H;
+    if (ia > fa) { tex.repeat.set(fa / ia, 1); tex.offset.set((1 - fa / ia) / 2, 0); } else { tex.repeat.set(1, ia / fa); tex.offset.set(0, (1 - ia / fa) / 2); }
+    const m = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+    textures.push(tex); mats.push(m);
+    const frame = new THREE.Group();
+    const back = new THREE.Mesh(borderGeo, gold);
+    back.position.z = -0.02;
+    frame.add(back, new THREE.Mesh(photoGeo, m));
+    frame.position.set(i % 2 ? 0.15 : -0.15, 0.25, -i * GAP); // sedikit zig-zag, tetap di dalam layar vertikal
+    frame.rotation.y = i % 2 ? -0.15 : 0.15;
+    stage.scene.add(frame);
+  });
+  const d = dust(stage.scene);
+  const ringGeo = new THREE.TorusGeometry(0.8, 0.06, 48, 180);
+  const rose = new THREE.MeshPhysicalMaterial({ color: "#c98e7e", metalness: 1, roughness: 0.16 });
+  const goldRing = new THREE.MeshPhysicalMaterial({ color: "#d4b072", metalness: 1, roughness: 0.14 });
+  const ra = new THREE.Mesh(ringGeo, goldRing), rb = new THREE.Mesh(ringGeo, rose);
+  ra.position.x = -0.4; rb.position.x = 0.4; rb.rotation.x = Math.PI / 2;
+  const ringGroup = new THREE.Group();
+  ringGroup.add(ra, rb);
+  ringGroup.position.set(0, 0.3, -n * GAP - 1);
+  stage.scene.add(ringGroup);
+
+  return record(stage, DUR, f, (t) => {
+    // kamera berhenti sejenak di depan tiap foto, lalu lanjut ke foto berikutnya; terakhir ke dua cincin
+    const u = Math.max(0, t - 1.0) / EACH, k = Math.min(n, Math.floor(u)), frac = u - k;
+    const dwell = frac < 0.55 ? 0 : (frac - 0.55) / 0.45, e = dwell * dwell * (3 - 2 * dwell);
+    const z = 4.6 - k * GAP - e * GAP;
+    stage.camera.position.set(Math.sin(t * 0.6) * 0.25, 0.25, Math.max(z, -n * GAP + 3.6));
+    stage.camera.lookAt(0, 0.25, stage.camera.position.z - 6);
+    ringGroup.rotation.y = t * 0.6;
+    d.pts.material.uniforms.uTime.value = t;
+    d.pts.position.z = stage.camera.position.z - 3;
+  }, (t, x) => {
+    x.title(inOut(t, 0.6, 1.0 + n * EACH), "Cerita kita,", `${years} tahun bersama`);
+    x.title(inOut(t, 1.4 + n * EACH, DUR - 1.2), `${CONFIG.suami} & ${CONFIG.istri}`, `sejak ${tgl(WED)}`);
+    x.end(span(t, DUR - 1.0, DUR - 0.4));
+  }, onProgress, () => {
+    [photoGeo, borderGeo, ringGeo, d.pts.geometry].forEach((g) => g.dispose());
+    [gold, rose, goldRing, d.pts.material, ...mats].forEach((m) => m.dispose());
+    textures.forEach((tx) => tx.dispose());
+  });
 }
 
-export const VIDEO_STYLES = [
+export type VideoStyle = { id: string; label: string; render: (photos: string[], onProgress: Progress) => Promise<Blob> };
+
+// semua gaya; website memakai foto keluarga di config, Story Studio memakai foto yang dipilih pengguna
+export const VIDEO_STYLES: VideoStyle[] = [
   { id: "partikel", label: "Partikel", render: particles },
-  { id: "cincin", label: "Cincin", render: rings },
+  { id: "galeri", label: "Galeri 3D", render: gallery },
   { id: "hati", label: "Hati emas", render: hearts },
-] as const;
+  { id: "cincin", label: "Cincin", render: rings },
+];
+// tiga gaya yang memakai foto, untuk Story Studio
+export const PHOTO_STYLES = VIDEO_STYLES.filter((s) => s.id !== "cincin");

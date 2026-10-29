@@ -1,5 +1,6 @@
 "use client";
 
+import { useNearViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -171,6 +172,7 @@ export default function Letters3D({ opened, current, onPick, name }: {
   opened: boolean[]; current: number | null; onPick: (i: number, x: number, y: number) => void; name: string;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
   const [visible, setVisible] = useState(false);
   const [targets, setTargets] = useState<Float32Array | null>(null);
   const count = opened.length;
@@ -193,7 +195,7 @@ export default function Letters3D({ opened, current, onPick, name }: {
 
   return (
     <div ref={wrap} className="letters-3d">
-      {targets && (
+      {targets && near && (
         <Canvas
           dpr={[1, 2]}
           frameloop={visible ? "always" : "never"}

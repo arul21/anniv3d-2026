@@ -1,5 +1,6 @@
 "use client";
 
+import { useNearViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -98,6 +99,7 @@ function Particles({ shapes, active, input, stage }: {
 
 export default function Hero3D({ active, numeral, onReady }: { active: boolean; numeral: string; onReady: () => void }) {
   const wrap = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
   const shapes = useRef<Shape[]>([]);
   const input = useRef<Input>({ x: 0, y: 0, over: false, lastX: null, lastY: 0, drag: 0, tilt: 0, gyX: 0, gyY: 0 });
   const [ready, setReady] = useState(false);
@@ -141,13 +143,26 @@ export default function Hero3D({ active, numeral, onReady }: { active: boolean; 
       inp.gyY = Math.max(-1, Math.min(1, e.gamma / 35)) * 0.6;
       inp.gyX = Math.max(-1, Math.min(1, (e.beta - 45) / 35)) * 0.25;
     };
+    // di HP geser vertikal diambil browser untuk scroll (pointercancel), tapi touchmove tetap jalan:
+    // jari yang menyapu hero tetap menyibak partikel sambil halaman ter-scroll
+    const el = wrap.current!;
+    const touch = (e: TouchEvent) => { const p = e.touches[0]; if (p) { inp.x = p.clientX; inp.y = p.clientY; inp.over = true; } };
+    const untouch = () => { inp.over = false; };
+    el.addEventListener("touchstart", touch, { passive: true });
+    el.addEventListener("touchmove", touch, { passive: true });
+    el.addEventListener("touchend", untouch);
+    el.addEventListener("touchcancel", untouch);
     addEventListener("pointermove", move);
     addEventListener("pointerup", release);
     addEventListener("pointercancel", release);
     addEventListener("deviceorientation", orient);
     const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting));
-    io.observe(wrap.current!);
+    io.observe(el);
     return () => {
+      el.removeEventListener("touchstart", touch);
+      el.removeEventListener("touchmove", touch);
+      el.removeEventListener("touchend", untouch);
+      el.removeEventListener("touchcancel", untouch);
       removeEventListener("pointermove", move);
       removeEventListener("pointerup", release);
       removeEventListener("pointercancel", release);
@@ -166,7 +181,7 @@ export default function Hero3D({ active, numeral, onReady }: { active: boolean; 
       onPointerDown={(e) => { aim(e); input.current.lastX = e.clientX; input.current.lastY = e.clientY; navigator.vibrate?.(10); }}
       onPointerLeave={() => { input.current.over = false; }}
     >
-      {ready && (
+      {ready && near && (
         <Canvas
           flat
           linear
