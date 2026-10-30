@@ -2,17 +2,19 @@
 
 import { useEffect, useState, type RefObject } from "react";
 
-// true kalau elemen sedang di/dekat layar. Margin bawaan dipakai untuk memasang adegan WebGL hanya saat dibutuhkan:
-// browser HP (terutama Safari iPhone) membatasi jumlah konteks WebGL aktif, dan konteks lama dimatikan diam-diam.
-// Dengan margin "0px" hasilnya "benar-benar terlihat", dipakai untuk menjeda render loop.
-export function useNearViewport(ref: RefObject<Element | null>, margin = "60% 0px") {
-  const [near, setNear] = useState(false);
+// Dua status dari satu elemen, untuk adegan WebGL:
+// - near: di/dekat layar (margin 60%) → adegan dipasang. Browser HP (terutama Safari iPhone) membatasi jumlah
+//   konteks WebGL aktif dan mematikan yang lama diam-diam, jadi adegan di luar jangkauan dilepas.
+// - visible: benar-benar terlihat → render loop berjalan, selain itu dijeda.
+export function useViewport(ref: RefObject<Element | null>) {
+  const [state, setState] = useState({ near: false, visible: false });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const io = new IntersectionObserver(([e]) => setNear(e.isIntersecting), { rootMargin: margin });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [ref, margin]);
-  return near;
+    const near = new IntersectionObserver(([e]) => setState((s) => ({ ...s, near: e.isIntersecting })), { rootMargin: "60% 0px" });
+    const visible = new IntersectionObserver(([e]) => setState((s) => ({ ...s, visible: e.isIntersecting })));
+    near.observe(el); visible.observe(el);
+    return () => { near.disconnect(); visible.disconnect(); };
+  }, [ref]);
+  return state;
 }

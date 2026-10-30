@@ -1,6 +1,6 @@
 "use client";
 
-import { useNearViewport } from "@/lib/useNearViewport";
+import { useViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -81,6 +81,12 @@ function World({ opened, current, onPick, targets }: {
   const world = useMemo(() => createWorld(opened.length, targets), [opened.length, targets]);
   const tmp = useMemo(() => ({ o: new THREE.Object3D(), q: new THREE.Quaternion(), qFront: new THREE.Quaternion(), v: new THREE.Vector3() }), []);
   const halfH = CAM_Z * TAN, halfW = halfH * (size.width / size.height);
+  // setengah tinggi tulisan nama (koordinat target: lebar terpanjang = ±1), supaya ukurannya bisa dibatasi tinggi layar juga
+  const nameExt = useMemo(() => {
+    let m = 0.01;
+    for (let i = 1; i < targets.length; i += 3) m = Math.max(m, Math.abs(targets[i]));
+    return m;
+  }, [targets]);
   const complete = opened.every(Boolean);
 
   useEffect(() => () => world.dispose(), [world]);
@@ -88,7 +94,8 @@ function World({ opened, current, onPick, targets }: {
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime, dt = Math.min(delta, 1 / 30);
     const { petal, petals } = world;
-    const nameW = Math.min(halfW * 0.85, 2.6), nameY = -halfH * 0.62;
+    // nama di bagian bawah: dibatasi lebar & tinggi; kelopak menonjol keluar dari garis hurufnya, jadi sisakan margin 18%
+    const nameW = Math.min(halfW * 0.85, 2.6, (halfH * 0.8) / nameExt), nameY = -halfH * 0.82 + nameExt * nameW;
 
     world.envelopes.forEach((e, i) => {
       const g = e.group;
@@ -172,8 +179,7 @@ export default function Letters3D({ opened, current, onPick, name }: {
   opened: boolean[]; current: number | null; onPick: (i: number, x: number, y: number) => void; name: string;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
-  const visible = useNearViewport(wrap, "0px");
+  const { near, visible } = useViewport(wrap); // near: pasang WebGL, visible: jalankan render loop
   const [targets, setTargets] = useState<Float32Array | null>(null);
   const count = opened.length;
 
@@ -192,7 +198,7 @@ export default function Letters3D({ opened, current, onPick, name }: {
       {targets && near && (
         <Canvas
           dpr={[1, 2]}
-          frameloop={visible ? "always" : "never"}
+          frameloop={visible ? "always" : "demand"}
           camera={{ fov: 45, near: 0.1, far: 40, position: [0, 0, CAM_Z] }}
           gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}
           style={{ position: "absolute", inset: 0, touchAction: "pan-y" }}

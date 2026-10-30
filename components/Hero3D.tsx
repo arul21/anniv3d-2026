@@ -1,6 +1,6 @@
 "use client";
 
-import { useNearViewport } from "@/lib/useNearViewport";
+import { useViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -99,8 +99,7 @@ function Particles({ shapes, active, input, stage }: {
 
 export default function Hero3D({ active, numeral, onReady }: { active: boolean; numeral: string; onReady: () => void }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
-  const visible = useNearViewport(wrap, "0px");
+  const { near, visible } = useViewport(wrap); // near: pasang WebGL, visible: jalankan render loop
   const shapes = useRef<Shape[]>([]);
   const input = useRef<Input>({ x: 0, y: 0, over: false, lastX: null, lastY: 0, drag: 0, tilt: 0, gyX: 0, gyY: 0 });
   const [ready, setReady] = useState(false);
@@ -183,7 +182,7 @@ export default function Hero3D({ active, numeral, onReady }: { active: boolean; 
           flat
           linear
           dpr={[1, 2]}
-          frameloop={visible ? "always" : "never"}
+          frameloop={visible ? "always" : "demand"}
           camera={{ fov: 45, near: 0.1, far: 50, position: [0, 0, 3.4] }}
           gl={{ alpha: true, antialias: false, powerPreference: "high-performance" }}
         >

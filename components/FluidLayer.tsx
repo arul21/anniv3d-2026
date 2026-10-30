@@ -3,7 +3,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
 import { Fluid } from "@/lib/fluid";
-import { useNearViewport } from "@/lib/useNearViewport";
+import { useViewport } from "@/lib/useNearViewport";
 
 // tinta emas cair di belakang hero: jejak jari/kursor mengalir dan berpusar, plus aliran pelan saat tidak disentuh
 const INK = [new THREE.Vector3(0.62, 0.48, 0.26), new THREE.Vector3(0.56, 0.38, 0.3), new THREE.Vector3(0.66, 0.58, 0.44)];
@@ -94,7 +94,7 @@ function FluidCanvas({ probe }: { probe: RefObject<HTMLSpanElement | null> }) {
 // renderer cairan hanya dibuat saat hero dekat layar (batas konteks WebGL di browser HP)
 export default function FluidLayer() {
   const probe = useRef<HTMLSpanElement>(null);
-  const near = useNearViewport(probe);
+  const { near } = useViewport(probe);
   return (
     <>
       <span ref={probe} className="fluid" aria-hidden="true" />

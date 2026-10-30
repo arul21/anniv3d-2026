@@ -24,6 +24,9 @@ function StoryDialog({ data, onClose }: { data: StoryData; onClose: () => void }
   const track = useRef<HTMLDivElement>(null);
   const shareBtn = useRef<HTMLButtonElement>(null);
   const urls = useRef<string[]>([]);
+  const mounted = useRef(true);
+  // foto dimuat sekali per dialog dan hanya untuk gaya video yang memakainya
+  const photos = useRef<Promise<HTMLImageElement[]> | null>(null);
   const slide = slides[index], video = videos[slide.id] ?? { status: "idle", progress: 0 };
   const busy = Object.values(videos).some((v) => v.status === "rendering");
 
@@ -34,6 +37,11 @@ function StoryDialog({ data, onClose }: { data: StoryData; onClose: () => void }
       .catch(() => { if (alive) setMsg("Gambar gagal dibuat. Coba lagi."); });
     return () => { alive = false; };
   }, [key]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     const list = urls.current;
@@ -52,8 +60,9 @@ function StoryDialog({ data, onClose }: { data: StoryData; onClose: () => void }
     const style = VIDEO_STYLES.find((s) => s.id === id)!;
     setVideos((v) => ({ ...v, [id]: { status: "rendering", progress: 0 } }));
     try {
-      const { imgs } = await loadPhotos([CONFIG.fotoPartikel]);
+      const imgs = style.photos ? await (photos.current ??= loadPhotos([CONFIG.fotoPartikel]).then((r) => r.imgs)) : [];
       const blob = await style.render(imgs, (p) => setVideos((v) => ({ ...v, [id]: { ...v[id], progress: p } })));
+      if (!mounted.current) return; // dialog sudah ditutup: jangan buat blob URL yang tidak akan pernah dibebaskan
       const url = URL.createObjectURL(blob);
       urls.current.push(url);
       setVideos((v) => ({ ...v, [id]: { status: "ready", progress: 1, blob, url } }));

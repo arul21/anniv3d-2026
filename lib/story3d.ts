@@ -6,7 +6,7 @@ import { CONFIG, WED, cssFont, roman, since, tgl } from "./config";
 import { heartGeometry } from "./geometry";
 import { makePoints, morphTo } from "./particles";
 import { heartShape, imageShape, infinityShape, shellShape, textShape, type Shape } from "./shapes";
-import { videoMime } from "./story";
+import { loadImage, videoMime } from "./story";
 
 const VW = 720, VH = 1280;
 const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : 1 - Math.pow(1 - t, 3));
@@ -31,14 +31,6 @@ async function loadFonts(): Promise<Fonts> {
     document.fonts.load(`italic 300 100px ${f.serif}`), document.fonts.load(`300 100px ${f.serif}`), document.fonts.load(`500 30px ${f.sans}`),
   ]);
   return f;
-}
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
 }
 export const MAX_PHOTOS = 5;
 // muat & decode foto sekali (paralel) untuk semua gaya video; foto yang gagal (mis. HEIC di Chrome) dihitung supaya bisa dilaporkan
@@ -144,11 +136,16 @@ function dust(scene: THREE.Scene) {
 // ---------- gaya 1: partikel (hati → angka → tiap foto jadi relief 3D → nama) ----------
 async function particles(imgs: HTMLImageElement[], onProgress: Progress) {
   const f = await loadFonts(), years = Math.max(1, since().y), N = 18000;
-  const pics = imgs.map((img) => {
-    const s = imageShape(N, img);
-    // imageShape meredupkan warna untuk hero; di video foto harus terbaca jelas, jadi dicerahkan lagi
-    if (s.col) for (let i = 0; i < s.col.length; i++) s.col[i] = Math.min(1, s.col[i] * 2.6);
-    return s;
+  const pics = imgs.flatMap((img) => {
+    try {
+      const s = imageShape(N, img);
+      // imageShape meredupkan warna untuk hero; di video foto harus terbaca jelas, jadi dicerahkan lagi
+      if (s.col) for (let i = 0; i < s.col.length; i++) s.col[i] = Math.min(1, s.col[i] * 2.6);
+      return [s];
+    } catch (err) {
+      console.warn("Foto dilewati di video partikel:", err); // satu foto bermasalah tidak boleh menggagalkan seluruh video
+      return [];
+    }
   });
   if (!pics.length) pics.push({ pos: infinityShape(N), hold: 0 });
   const PHOTO = 2.6, P0 = 4.6, NAMES = P0 + pics.length * PHOTO, DUR = NAMES + 2.6;
@@ -333,14 +330,14 @@ async function gallery(imgs: HTMLImageElement[], onProgress: Progress) {
   });
 }
 
-export type VideoStyle = { id: string; label: string; render: (imgs: HTMLImageElement[], onProgress: Progress) => Promise<Blob> };
+export type VideoStyle = { id: string; label: string; photos: boolean; render: (imgs: HTMLImageElement[], onProgress: Progress) => Promise<Blob> };
 
 // semua gaya; website memakai foto keluarga di config, Story Studio memakai foto yang dipilih pengguna
 export const VIDEO_STYLES: VideoStyle[] = [
-  { id: "partikel", label: "Partikel", render: particles },
-  { id: "galeri", label: "Galeri 3D", render: gallery },
-  { id: "hati", label: "Hati emas", render: hearts },
-  { id: "cincin", label: "Cincin", render: rings },
+  { id: "partikel", label: "Partikel", photos: true, render: particles },
+  { id: "galeri", label: "Galeri 3D", photos: true, render: gallery },
+  { id: "hati", label: "Hati emas", photos: true, render: hearts },
+  { id: "cincin", label: "Cincin", photos: false, render: rings },
 ];
 // tiga gaya yang memakai foto, untuk Story Studio
-export const PHOTO_STYLES = VIDEO_STYLES.filter((s) => s.id !== "cincin");
+export const PHOTO_STYLES = VIDEO_STYLES.filter((s) => s.photos);

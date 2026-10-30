@@ -1,6 +1,6 @@
 "use client";
 
-import { useNearViewport } from "@/lib/useNearViewport";
+import { useViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -70,33 +70,50 @@ function createWorld() {
 }
 
 type Ctl = { tx: number; ty: number; keys: Record<string, boolean> };
+// state engine disimpan di luar <World>: canvas dilepas saat di-scroll jauh (batas WebGL di HP),
+// dan saat dipasang lagi permainan lanjut / adegan menang dipulihkan dari sini
+type Game = {
+  session: number; phase: "idle" | "play" | "finale" | "done"; score: number; lives: number; combo: number;
+  spawnT: number; slow: number; shake: number; flash: number; finaleT: number; attached: boolean;
+};
 
 /* eslint-disable react-hooks/immutability --
    Posisi, material & kamera three.js serta state engine game memang diubah langsung tiap frame di useFrame
    (pola React Three Fiber); bukan state React dan tidak memicu render ulang. HUD dikirim lewat callback. */
-function World({ session, started, target, ctl, onHud, onEnd }: {
-  session: number; started: React.RefObject<number>; target: number; ctl: React.RefObject<Ctl>; onHud: (h: Hud) => void; onEnd: (win: boolean) => void;
+function World({ session, game, target, ctl, onHud, onEnd }: {
+  session: number; game: React.RefObject<Game>; target: number; ctl: React.RefObject<Ctl>; onHud: (h: Hud) => void; onEnd: (win: boolean) => void;
 }) {
   const { camera, size, gl, scene } = useThree();
   const world = useMemo(() => createWorld(), []);
-  const G = useRef({ phase: "idle" as "idle" | "play" | "finale" | "done", score: 0, lives: 3, combo: 0, spawnT: 0, slow: 0, shake: 0, flash: 0, finaleT: 0, attached: false });
+  const G = game;
   const tmp = useMemo(() => ({ v: new THREE.Vector3() }), []);
   const halfH = CAM_Z * TAN, halfW = halfH * (size.width / size.height);
 
   useEffect(() => () => world.dispose(), [world]);
 
+  // canvas baru untuk sesi yang sudah berjalan: pulihkan cincin & berlian sesuai fase terakhir
+  useEffect(() => {
+    const g = G.current;
+    if (g.attached) {
+      world.ring.add(world.bigGem);
+      world.bigGem.visible = true; world.bigGem.position.set(0, 0.62, 0); world.bigGem.scale.setScalar(1);
+      world.ring.scale.setScalar(1 + Math.min(0.55, g.finaleT * 0.5));
+    } else if (g.phase === "finale") {
+      world.bigGem.visible = true; world.bigGem.position.set(0, 0, FAR); world.bigGem.scale.setScalar(2.2);
+    }
+  }, [world, G]);
+
   // sesi baru = mulai main
   useEffect(() => {
-    if (session === 0 || started.current === session) return;
-    started.current = session;
-    Object.assign(G.current, { phase: "play", score: 0, lives: 3, combo: 0, spawnT: 0.4, slow: 0, shake: 0, flash: 0, finaleT: 0, attached: false });
+    if (session === 0 || G.current.session === session) return;
+    Object.assign(G.current, { session, phase: "play", score: 0, lives: 3, combo: 0, spawnT: 0.4, slow: 0, shake: 0, flash: 0, finaleT: 0, attached: false });
     world.items.forEach((it) => { it.alive = false; it.mesh.visible = false; });
     if (world.bigGem.parent === world.ring) { world.ring.remove(world.bigGem); scene.add(world.bigGem); }
     world.bigGem.visible = false;
     world.ring.scale.setScalar(1);
     world.ring.rotation.set(0, 0, 0);
     onHud({ score: 0, lives: 3, mult: 1 });
-  }, [session, started, world, onHud, scene]);
+  }, [session, G, world, onHud, scene]);
 
   const burstAt = (x: number, y: number, z: number, n: number) => {
     tmp.v.set(x, y, z).project(camera);
@@ -246,11 +263,9 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
   session: number; target: number; playing: boolean; onHud: (h: Hud) => void; onEnd: (win: boolean) => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const near = useNearViewport(wrap); // pasang WebGL hanya saat dekat layar
-  const visible = useNearViewport(wrap, "0px");
+  const { near, visible } = useViewport(wrap); // near: pasang WebGL, visible: jalankan render loop
   const ctl = useRef<Ctl>({ tx: 0, ty: -0.6, keys: {} });
-  // sesi terakhir yang sudah dimulai, disimpan di luar <World> supaya canvas yang dipasang ulang tidak memulai game lagi
-  const started = useRef(0);
+  const game = useRef<Game>({ session: 0, phase: "idle", score: 0, lives: 3, combo: 0, spawnT: 0, slow: 0, shake: 0, flash: 0, finaleT: 0, attached: false });
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -277,10 +292,9 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
       onPointerMove={aim}
       onPointerDown={aim}
     >
-      {/* selama bermain canvas tetap terpasang walau di-scroll jauh (hanya dijeda), supaya skor tidak hilang */}
-      {(near || playing) && (<Canvas
+      {near && (<Canvas
         dpr={[1, 2]}
-        frameloop={visible ? "always" : "never"}
+        frameloop={visible ? "always" : "demand"}
         camera={{ fov: 50, near: 0.1, far: 40, position: [0, 0, CAM_Z] }}
         gl={{ alpha: true, antialias: true }}
         style={{ position: "absolute", inset: 0 }}
@@ -288,7 +302,7 @@ export default function RingGame3D({ session, target, playing, onHud, onEnd }: {
         <Studio intensity={1} />
         <directionalLight position={[2, 3, 4]} intensity={1.4} color="#fff1dc" />
         <pointLight position={[0, 0, 2]} intensity={4} color="#e8c48a" />
-        <World session={session} started={started} target={target} ctl={ctl} onHud={onHud} onEnd={onEnd} />
+        <World session={session} game={game} target={target} ctl={ctl} onHud={onHud} onEnd={onEnd} />
       </Canvas>)}
     </div>
   );

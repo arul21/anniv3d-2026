@@ -24,7 +24,7 @@ async function fontsReady(f: Fonts) {
     document.fonts.load(`italic 400 100px ${f.serif}`), document.fonts.load(`500 30px ${f.sans}`),
   ]);
 }
-function loadImage(src: string) {
+export function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);

@@ -24,10 +24,15 @@ export default function StoryStudio() {
   const photoList = useRef<Photo[]>([]);
   const videoUrls = useRef<string[]>([]);
   const track = useRef<HTMLDivElement>(null);
+  const mounted = useRef(true);
 
-  useEffect(() => () => {
-    photoList.current.forEach((p) => URL.revokeObjectURL(p.url));
-    videoUrls.current.forEach((u) => URL.revokeObjectURL(u));
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false; // render yang masih berjalan berhenti setelah gaya yang sedang diproses
+      photoList.current.forEach((p) => URL.revokeObjectURL(p.url));
+      videoUrls.current.forEach((u) => URL.revokeObjectURL(u));
+    };
   }, []);
 
   const commitPhotos = (next: Photo[]) => { photoList.current = next; setPhotos(next); };
@@ -58,23 +63,28 @@ export default function StoryStudio() {
       setRunning(false);
       return;
     }
-    if (failed) setNotice(`${failed} foto tidak bisa dibaca dan dilewati. Coba ganti dengan JPG atau PNG.`);
+    const skipped = failed ? `${failed} foto tidak bisa dibaca dan dilewati. Coba ganti dengan JPG atau PNG.` : "";
+    setNotice(skipped);
     setResults(Object.fromEntries(PHOTO_STYLES.map((s) => [s.id, { status: "waiting", progress: 0 }])));
     let errors = 0;
     for (const s of PHOTO_STYLES) {
+      if (!mounted.current) return;
       setResults((r) => ({ ...r, [s.id]: { status: "rendering", progress: 0 } }));
       try {
         const blob = await s.render(imgs, (p) => setResults((r) => ({ ...r, [s.id]: { ...r[s.id], progress: p } })));
+        if (!mounted.current) return;
         const url = URL.createObjectURL(blob);
         videoUrls.current.push(url);
         setResults((r) => ({ ...r, [s.id]: { status: "ready", progress: 1, blob, url } }));
       } catch (err) {
+        if (!mounted.current) return;
         console.error(`Video ${s.id} gagal dibuat:`, err);
         errors++;
         setResults((r) => ({ ...r, [s.id]: { status: "error", progress: 0 } }));
       }
     }
-    if (errors) setNotice("Sebagian video gagal dibuat. Tutup tab atau aplikasi lain yang berat, lalu tekan Buat ulang.");
+    // pesan foto yang dilewati tetap ditampilkan: bisa jadi itu penyebabnya
+    if (errors) setNotice([skipped, "Sebagian video gagal dibuat. Tutup tab atau aplikasi lain yang berat, lalu tekan Buat ulang."].filter(Boolean).join(" "));
     setRunning(false);
   };
   const share = async (blob: Blob, id: string) => {

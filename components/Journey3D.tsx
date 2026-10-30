@@ -1,6 +1,6 @@
 "use client";
 
-import { useNearViewport } from "@/lib/useNearViewport";
+import { useViewport } from "@/lib/useNearViewport";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -255,8 +255,7 @@ export default function Journey3D({ section, bar, onActive }: {
   section: React.RefObject<HTMLElement | null>; bar: React.RefObject<HTMLElement | null>; onActive: (i: number) => void;
 }) {
   const [fonts, setFonts] = useState<{ serif: string; sans: string } | null>(null);
-  const near = useNearViewport(section); // pasang WebGL hanya saat dekat layar
-  const visible = useNearViewport(section, "0px");
+  const { near, visible } = useViewport(section); // near: pasang WebGL, visible: jalankan render loop
 
   // kartu pengganti foto digambar dengan font dari next/font, jadi tunggu fontnya siap
   useEffect(() => {
@@ -272,7 +271,7 @@ export default function Journey3D({ section, bar, onActive }: {
     <Canvas
       className="journey-canvas"
       dpr={[1, 2]}
-      frameloop={visible ? "always" : "never"}
+      frameloop={visible ? "always" : "demand"}
       camera={{ fov: 50, near: 0.1, far: 60, position: [0, 0, 12] }}
       gl={{ antialias: true, powerPreference: "high-performance" }}
       style={{ position: "absolute", inset: 0, touchAction: "pan-y" }}
