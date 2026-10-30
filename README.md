@@ -23,7 +23,6 @@ Semua teks, nama, tanggal, kupon, dan surat ada di `lib/config.ts`.
 - `app/`: layout (font, metadata), halaman, dan `opengraph-image.tsx` (gambar preview saat link dibagikan)
 - `components/`: satu file per bagian halaman; `Hero3D.tsx` berisi adegan partikel WebGL + shader GLSL
 - `lib/`: config, engine audio, kembang api/confetti, dan generator bentuk partikel
-- `legacy/index.html`: versi lama satu file (tanpa build), sebagai cadangan
 
 ## Deploy
 
